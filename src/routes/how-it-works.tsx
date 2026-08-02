@@ -113,14 +113,32 @@ function HowItWorks() {
         <h2 className="text-xl font-semibold">Reading the result</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           {[
-            ["Green", "< 8 m/s", "Normal arterial stiffness", "risk-normal"],
-            ["Yellow", "8 – 10 m/s", "Borderline — recheck in 4 weeks", "risk-borderline"],
-            ["Red", "> 10 m/s", "High — see a doctor or PHC", "risk-high"],
-          ].map(([band, range, label, token]) => (
-            <div key={band} className={`rounded-xl border border-${token}/40 bg-${token}/10 p-4`}>
-              <p className={`font-display text-lg text-${token}`}>{band}</p>
-              <p className="mt-1 text-sm">{range}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{label}</p>
+            {
+              band: "Green",
+              range: "< 8 m/s",
+              label: "Normal arterial stiffness",
+              box: "border-risk-normal/40 bg-risk-normal/10",
+              text: "text-risk-normal",
+            },
+            {
+              band: "Yellow",
+              range: "8 - 10 m/s",
+              label: "Borderline - recheck in 4 weeks",
+              box: "border-risk-borderline/40 bg-risk-borderline/10",
+              text: "text-risk-borderline",
+            },
+            {
+              band: "Red",
+              range: "> 10 m/s",
+              label: "High - see a doctor or PHC",
+              box: "border-risk-high/40 bg-risk-high/10",
+              text: "text-risk-high",
+            },
+          ].map((b) => (
+            <div key={b.band} className={`rounded-xl border p-4 ${b.box}`}>
+              <p className={`font-display text-lg ${b.text}`}>{b.band}</p>
+              <p className="mt-1 text-sm">{b.range}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{b.label}</p>
             </div>
           ))}
         </div>
