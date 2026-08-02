@@ -1,0 +1,18 @@
+{
+  "name": "NadiScan — Pulse Wave Hypertension Screener",
+  "short_name": "NadiScan",
+  "description": "Free browser-based hypertension screening using your smartphone camera and flashlight.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0c1a20",
+  "theme_color": "#0c1a20",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    }
+  ]
+}
