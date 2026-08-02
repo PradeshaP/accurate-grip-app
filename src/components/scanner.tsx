@@ -5,6 +5,11 @@ import { Waveform } from "@/components/waveform";
 
 const DURATION_MS = 30_000;
 
+/** Torch is a non-standard MediaTrackConstraint supported by most Android browsers. */
+function torchConstraint(on: boolean): MediaTrackConstraints {
+  return { advanced: [{ torch: on }] } as unknown as MediaTrackConstraints;
+}
+
 type Phase = "idle" | "starting" | "capturing" | "analysing" | "error";
 
 interface Props {
@@ -56,7 +61,7 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
     if (stream) {
       for (const track of stream.getTracks()) {
         try {
-          track.applyConstraints({ advanced: [{ torch: false }] } as MediaTrackConstraints);
+          track.applyConstraints(torchConstraint(false));
         } catch {
           /* torch unsupported */
         }
@@ -108,9 +113,7 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
       streamRef.current = stream;
       const track = stream.getVideoTracks()[0];
       try {
-        await track?.applyConstraints({
-          advanced: [{ torch: true }],
-        } as MediaTrackConstraints);
+        await track?.applyConstraints(torchConstraint(true));
       } catch {
         /* device has no torch — ambient light still works */
       }
