@@ -17,63 +17,84 @@ export type Database = {
       scan_records: {
         Row: {
           age_band: string | null
+          confidence: number | null
           created_at: string
           device_label: string | null
           district: string | null
           est_diastolic: number | null
           est_systolic: number | null
           finger_distance_cm: number | null
+          fps: number | null
           gender: string | null
           heart_rate: number
           hrv_ms: number | null
           id: string
           language: string
+          perfusion_index: number | null
           ptt_ms: number
+          ptt_spread_ms: number | null
           pwv: number
           risk_level: string
+          rmssd_ms: number | null
           screener_role: string | null
           signal_quality: number
+          snr_db: number | null
           state: string | null
+          takes: number | null
         }
         Insert: {
           age_band?: string | null
+          confidence?: number | null
           created_at?: string
           device_label?: string | null
           district?: string | null
           est_diastolic?: number | null
           est_systolic?: number | null
           finger_distance_cm?: number | null
+          fps?: number | null
           gender?: string | null
           heart_rate: number
           hrv_ms?: number | null
           id?: string
           language?: string
+          perfusion_index?: number | null
           ptt_ms: number
+          ptt_spread_ms?: number | null
           pwv: number
           risk_level: string
+          rmssd_ms?: number | null
           screener_role?: string | null
           signal_quality: number
+          snr_db?: number | null
           state?: string | null
+          takes?: number | null
         }
         Update: {
           age_band?: string | null
+          confidence?: number | null
           created_at?: string
           device_label?: string | null
           district?: string | null
           est_diastolic?: number | null
           est_systolic?: number | null
           finger_distance_cm?: number | null
+          fps?: number | null
           gender?: string | null
           heart_rate?: number
           hrv_ms?: number | null
           id?: string
           language?: string
+          perfusion_index?: number | null
           ptt_ms?: number
+          ptt_spread_ms?: number | null
           pwv?: number
           risk_level?: string
+          rmssd_ms?: number | null
           screener_role?: string | null
           signal_quality?: number
+          snr_db?: number | null
           state?: string | null
+          takes?: number | null
         }
         Relationships: []
       }
