@@ -151,7 +151,7 @@ export function ResultCard({
           <span>16 m/s</span>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          95% range {analysis.pwvLow.toFixed(2)}–{analysis.pwvHigh.toFixed(2)} m/s ·{" "}
+          Estimate range {analysis.pwvLow.toFixed(2)}–{analysis.pwvHigh.toFixed(2)} m/s ·{" "}
           {analysis.takes > 1 ? `${analysis.takes} takes combined` : "single take"}
         </p>
         <p className="mt-3 text-sm">{advice}</p>
