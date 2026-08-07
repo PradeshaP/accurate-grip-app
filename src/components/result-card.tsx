@@ -100,6 +100,13 @@ export function ResultCard({
       finger_distance_cm: meta.fingerDistanceCm,
       screener_role: meta.role || null,
       device_label: typeof navigator !== "undefined" ? navigator.platform : null,
+      confidence: analysis.confidence,
+      snr_db: analysis.snrDb,
+      perfusion_index: analysis.perfusionIndex,
+      rmssd_ms: analysis.rmssdMs,
+      ptt_spread_ms: analysis.pttSpreadMs,
+      fps: analysis.fsActual,
+      takes: analysis.takes,
     });
     setSaving(false);
     if (error) setSaveError(t("common.retryLater"));
@@ -143,6 +150,10 @@ export function ResultCard({
           <span>10</span>
           <span>16 m/s</span>
         </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          95% range {analysis.pwvLow.toFixed(2)}–{analysis.pwvHigh.toFixed(2)} m/s ·{" "}
+          {analysis.takes > 1 ? `${analysis.takes} takes combined` : "single take"}
+        </p>
         <p className="mt-3 text-sm">{advice}</p>
       </div>
 
@@ -157,9 +168,16 @@ export function ResultCard({
         />
         <Metric label={t("result.quality")} value={`${analysis.quality}`} unit="%" />
         <Metric label={t("result.beats")} value={`${analysis.beats}`} />
+        <Metric label="Confidence" value={`${analysis.confidence}`} unit="%" />
+        <Metric label="Signal SNR" value={analysis.snrDb.toFixed(1)} unit="dB" />
+        <Metric label="Perfusion" value={analysis.perfusionIndex.toFixed(2)} unit="%" />
+        <Metric label="RMSSD" value={analysis.rmssdMs.toFixed(0)} unit="ms" />
+        <Metric label="PTT spread" value={`±${analysis.pttSpreadMs.toFixed(2)}`} unit="ms" />
+        <Metric label="Camera rate" value={analysis.fsActual.toFixed(0)} unit="fps" />
       </div>
 
-      <div className="mt-5">
+      <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
+        <div>
         <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
           PPG — red / green channel
         </p>
@@ -168,6 +186,15 @@ export function ResultCard({
           secondary={analysis.waveB.slice(0, 600)}
           height={140}
         />
+        </div>
+        {analysis.template.length > 0 && (
+          <div className="w-full sm:w-40">
+            <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+              Averaged beat
+            </p>
+            <Waveform data={analysis.template} height={140} />
+          </div>
+        )}
       </div>
 
       <div className="mt-6 flex flex-wrap gap-3">
