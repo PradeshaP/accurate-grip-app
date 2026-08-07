@@ -246,7 +246,11 @@ export function estimateHeartRate(
 export function findPeaks(x: number[], fs: number, bpm?: number): number[] {
   if (!x.length) return [];
   const beatSamples = bpm && bpm > 30 ? (60 / bpm) * fs : fs * 0.6;
-  const refractory = Math.round(Math.max(fs * 0.28, beatSamples * 0.55));
+  // Clamped so a halved/doubled autocorrelation estimate cannot make the
+  // refractory window swallow real beats.
+  const refractory = Math.round(
+    Math.min(Math.max(fs * 0.28, beatSamples * 0.5), fs * 0.6),
+  );
   const win = Math.round(fs * 2);
   const peaks: number[] = [];
   for (let i = 1; i < x.length - 1; i++) {
@@ -400,6 +404,22 @@ export function rejectArtifactBeats(
   return { kept: kept.length >= 3 ? kept : pool.map((s) => s.idx), template };
 }
 
+/**
+ * Effective arterial path length (metres) represented by the measured
+ * channel-to-channel delay at the reference 3 cm fingertip separation.
+ * Derived from the mean heart-to-fingertip path in adults; scaling by the
+ * actual sensor separation keeps two-point measurements comparable.
+ */
+export const REFERENCE_PATH_M = 0.45;
+export const REFERENCE_SEPARATION_CM = 3;
+
+/** Converts a pulse transit time to pulse wave velocity, clamped to a physiological range. */
+export function pwvFromPtt(pttMs: number, fingerDistanceCm: number): number {
+  const scale = Math.max(0.5, fingerDistanceCm) / REFERENCE_SEPARATION_CM;
+  const pathM = REFERENCE_PATH_M * scale;
+  return Math.min(24, Math.max(3, pathM / (Math.max(0.6, pttMs) / 1000)));
+}
+
 export function classifyPwv(pwv: number): RiskLevel {
   if (pwv < 8) return "normal";
   if (pwv < 10) return "borderline";
@@ -528,13 +548,12 @@ export function analyseScan(
   );
 
   const pttMs = Math.max(0.6, ptt.ms);
-  const distanceM = Math.max(0.5, fingerDistanceCm) / 100;
-  const pwv = Math.min(24, Math.max(3, distanceM / (pttMs / 1000)));
+  const pwv = pwvFromPtt(pttMs, fingerDistanceCm);
 
   // Propagate the PTT spread into a PWV confidence interval.
   const spread = Math.max(ptt.spread, pttMs * 0.05);
-  const pwvLow = Math.min(24, Math.max(3, distanceM / ((pttMs + spread) / 1000)));
-  const pwvHigh = Math.min(24, Math.max(3, distanceM / (Math.max(0.6, pttMs - spread) / 1000)));
+  const pwvLow = pwvFromPtt(pttMs + spread, fingerDistanceCm);
+  const pwvHigh = pwvFromPtt(pttMs - spread, fingerDistanceCm);
 
   const relSpread = pttMs > 0 ? Math.min(1, spread / pttMs) : 1;
   const confidence = Math.round(
