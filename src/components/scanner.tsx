@@ -87,6 +87,17 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
 
   const startRef2 = useRef<(() => Promise<void>) | null>(null);
 
+  // Keep a ref mirror of the phase so the rAF loop reads fresh values.
+  const phaseRef = useRef<Phase>("idle");
+  const setPhaseSync = useCallback((p: Phase) => {
+    phaseRef.current = p;
+    setPhase(p);
+  }, []);
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+
+
   const finishTake = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
@@ -261,16 +272,6 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
       );
     }
   }, [finishTake, stopStream, t]);
-
-  // Keep a ref mirror of the phase so the rAF loop reads fresh values.
-  const phaseRef = useRef<Phase>("idle");
-  const setPhaseSync = useCallback((p: Phase) => {
-    phaseRef.current = p;
-    setPhase(p);
-  }, []);
-  useEffect(() => {
-    phaseRef.current = phase;
-  }, [phase]);
 
   startRef2.current = beginCapture;
 
