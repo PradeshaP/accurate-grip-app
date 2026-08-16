@@ -475,9 +475,20 @@ const FALLBACK = {
 };
 
 export function analyseScan(
-  samples: RawSample[],
+  rawSamples: RawSample[],
   { fingerDistanceCm, fs: fsOpt }: AnalyseOptions,
 ): ScanAnalysis {
+  // Robust motion gate: drop frames whose motion energy is a clear outlier
+  // relative to the rest of the record (median + 3 robust sigma), as long as
+  // that still leaves the majority of the record intact.
+  let samples = rawSamples;
+  const motions = rawSamples.map((s) => s.motion ?? 0).filter((v) => v > 0);
+  if (motions.length > rawSamples.length * 0.5) {
+    const cut = median(motions) + 3 * 1.4826 * mad(motions);
+    const cleaned = rawSamples.filter((s) => (s.motion ?? 0) <= cut);
+    if (cleaned.length >= rawSamples.length * 0.6) samples = cleaned;
+  }
+
   if (samples.length < 60) {
     return { ...FALLBACK, ok: false, reason: "too-short" };
   }
@@ -487,6 +498,7 @@ export function analyseScan(
   const fs = fsOpt ?? Math.round(Math.min(120, Math.max(60, fsActual * 2)));
 
   const { a: rawA, b: rawB } = resample(samples, fs);
+
   if (rawA.length < fs * 5) {
     return { ...FALLBACK, fsActual, ok: false, reason: "too-short" };
   }
