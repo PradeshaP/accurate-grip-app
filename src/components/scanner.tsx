@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { analyseScan, combineAnalyses, type RawSample, type ScanAnalysis } from "@/lib/ppg";
+import { coach, Rolling, MOTION_DROP, type CoachState } from "@/lib/coach";
 import { useI18n } from "@/lib/i18n";
 import { Waveform } from "@/components/waveform";
 
 const DURATION_MS = 30_000;
+/** Capture may run this much longer to make up for frames rejected by coaching. */
+const MAX_EXTRA_MS = 15_000;
 const REST_MS = 4_000;
 
 /** Torch is a non-standard MediaTrackConstraint supported by most Android browsers. */
@@ -35,6 +38,7 @@ function syntheticSamples(): RawSample[] {
       t: t * 1000,
       red: 168 + drift + 9 * wave(t / beat) + (Math.random() - 0.5) * 0.8,
       green: 96 + drift + 5.5 * wave((t - ptt) / beat) + (Math.random() - 0.5) * 0.9,
+      motion: 0.3 + Math.random() * 0.2,
     });
   }
   return out;
@@ -54,6 +58,16 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
   const detectStableRef = useRef(0);
   const frameCountRef = useRef(0);
   const lastFpsAtRef = useRef(0);
+  const fpsRef = useRef(0);
+
+  // Live-quality trackers.
+  const motionWinRef = useRef(new Rolling(20));
+  const acWinRef = useRef(new Rolling(90));
+  const seenRef = useRef(0);
+  const keptRef = useRef(0);
+  const acceptedMsRef = useRef(0);
+  const lastFrameAtRef = useRef(0);
+  const coachRef = useRef<CoachState>({ level: "good", code: "ok", message: "" });
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +78,8 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
   const [fps, setFps] = useState(0);
   const [takeIndex, setTakeIndex] = useState(0);
   const [highAccuracy, setHighAccuracy] = useState(true);
+  const [tip, setTip] = useState<CoachState>({ level: "good", code: "ok", message: "" });
+  const [acceptance, setAcceptance] = useState(100);
 
   const stopStream = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -96,7 +112,6 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
-
 
   const finishTake = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -136,6 +151,13 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
     prevFrameRef.current = null;
     detectStableRef.current = 0;
     frameCountRef.current = 0;
+    seenRef.current = 0;
+    keptRef.current = 0;
+    acceptedMsRef.current = 0;
+    lastFrameAtRef.current = 0;
+    motionWinRef.current.clear();
+    acWinRef.current.clear();
+    setAcceptance(100);
     setLive([]);
     setPhase("starting");
     try {
@@ -203,6 +225,7 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
           const { data } = ctx.getImageData(0, 0, 64, 64);
           let r = 0;
           let g = 0;
+          let clipped = 0;
           const px = data.length / 4;
           const lum = new Float32Array(px);
           for (let i = 0, k = 0; i < data.length; i += 4, k++) {
@@ -210,10 +233,12 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
             const gv = data[i + 1]!;
             r += rv;
             g += gv;
+            if (rv >= 252) clipped++;
             lum[k] = rv * 0.5 + gv * 0.5;
           }
           r /= px;
           g /= px;
+          const clipFrac = clipped / px;
 
           // Frame-to-frame motion energy (normalised).
           let motion = 0;
@@ -224,36 +249,82 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
             motion = acc / px;
           }
           prevFrameRef.current = lum;
+          motionWinRef.current.push(motion);
+          acWinRef.current.push(r);
 
-          // Finger present = bright, saturated red with low green.
-          const fingerOn = r > 90 && r - g > 18;
+          const motionMean = motionWinRef.current.mean();
+          const motionPeak = motionWinRef.current.max();
+          // Live perfusion: peak-to-peak of the recent red trace over its mean.
+          const perfusion = r > 0 ? (acWinRef.current.range() / r) * 100 : 0;
+
           const cov = Math.round(Math.min(100, Math.max(0, ((r - 55) / 130) * 100)));
           setCoverage(cov);
-          setStability(Math.round(Math.max(0, Math.min(100, 100 - motion * 12))));
+          setStability(Math.round(Math.max(0, Math.min(100, 100 - motionMean * 12))));
 
           frameCountRef.current++;
           if (now - lastFpsAtRef.current > 800) {
-            setFps(Math.round((frameCountRef.current * 1000) / (now - lastFpsAtRef.current)));
+            const f = Math.round((frameCountRef.current * 1000) / (now - lastFpsAtRef.current));
+            fpsRef.current = f;
+            setFps(f);
             frameCountRef.current = 0;
             lastFpsAtRef.current = now;
           }
 
+          const accept = seenRef.current ? keptRef.current / seenRef.current : 1;
+          const state = coach({
+            red: r,
+            green: g,
+            clipped: clipFrac,
+            motion: motionMean,
+            motionPeak,
+            perfusion: acWinRef.current.length > 25 ? perfusion : 1,
+            fps: fpsRef.current,
+            acceptance: accept,
+          });
+          if (state.code !== coachRef.current.code) {
+            coachRef.current = state;
+            setTip(state);
+          }
+
           if (phaseRef.current === "detecting") {
-            detectStableRef.current = fingerOn ? detectStableRef.current + 1 : 0;
+            // Only lock on when coaching is satisfied — a clean start is worth
+            // more than an early one.
+            detectStableRef.current = state.level === "good" ? detectStableRef.current + 1 : 0;
             if (detectStableRef.current > 20) {
               startRef.current = now;
               samplesRef.current = [];
+              seenRef.current = 0;
+              keptRef.current = 0;
+              acceptedMsRef.current = 0;
+              lastFrameAtRef.current = now;
               setPhaseSync("capturing");
             }
           } else if (phaseRef.current === "capturing") {
             const elapsed = now - startRef.current;
-            // Motion-corrupted frames are dropped rather than filtered later.
-            if (motion < 6) samplesRef.current.push({ t: elapsed, red: r, green: g, motion });
+            const dt = lastFrameAtRef.current ? now - lastFrameAtRef.current : 0;
+            lastFrameAtRef.current = now;
+
+            seenRef.current++;
+            // Frames are only banked when the coach is happy; artifacts never
+            // reach the analysis stage.
+            const usable = state.level !== "bad" && motion < MOTION_DROP && clipFrac < 0.25;
+            if (usable) {
+              keptRef.current++;
+              acceptedMsRef.current += Math.min(200, dt);
+              samplesRef.current.push({ t: elapsed, red: r, green: g, motion });
+            }
+            if (seenRef.current % 10 === 0) {
+              setAcceptance(Math.round((keptRef.current / seenRef.current) * 100));
+            }
             if (samplesRef.current.length % 3 === 0) {
               setLive(samplesRef.current.slice(-160).map((s) => s.red));
             }
-            setRemaining(Math.max(0, Math.ceil((DURATION_MS - elapsed) / 1000)));
-            if (elapsed >= DURATION_MS) {
+
+            // The countdown tracks *accepted* time, so rejected frames are
+            // automatically made up for (bounded by MAX_EXTRA_MS).
+            const left = Math.max(0, DURATION_MS - acceptedMsRef.current);
+            setRemaining(Math.ceil(left / 1000));
+            if (acceptedMsRef.current >= DURATION_MS || elapsed >= DURATION_MS + MAX_EXTRA_MS) {
               finishTake();
               return;
             }
@@ -271,7 +342,7 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
           : t("scan.noCamera"),
       );
     }
-  }, [finishTake, stopStream, t]);
+  }, [finishTake, setPhaseSync, stopStream, t]);
 
   startRef2.current = beginCapture;
 
@@ -293,6 +364,13 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
   const detecting = phase === "detecting";
   const progress = capturing ? 1 - remaining / (DURATION_MS / 1000) : 0;
   const busy = capturing || detecting || phase === "analysing" || phase === "resting";
+
+  const tipTone =
+    tip.level === "bad"
+      ? "border-risk-high/50 bg-risk-high/10 text-risk-high"
+      : tip.level === "warn"
+        ? "border-risk-borderline/50 bg-risk-borderline/10 text-risk-borderline"
+        : "border-risk-normal/50 bg-risk-normal/10 text-risk-normal";
 
   return (
     <div className="panel p-5 sm:p-7">
@@ -338,6 +416,19 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
       </div>
 
       {(capturing || detecting) && (
+        <div
+          className={`mt-4 flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition-colors ${tipTone}`}
+          role="status"
+          aria-live="polite"
+        >
+          <span
+            className={`h-2.5 w-2.5 shrink-0 rounded-full bg-current ${tip.level === "good" ? "" : "animate-pulse"}`}
+          />
+          <span>{tip.message}</span>
+        </div>
+      )}
+
+      {(capturing || detecting) && (
         <div className="mt-4 space-y-2">
           <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
             <div
@@ -357,14 +448,18 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
             <span className={stability > 80 ? "text-risk-normal" : "text-risk-high"}>
               stability {stability}%
             </span>
+            {capturing && (
+              <span className={acceptance > 80 ? "text-risk-normal" : "text-risk-borderline"}>
+                accepted {acceptance}%
+              </span>
+            )}
           </div>
-          <p className="text-xs text-muted-foreground">
-            {stability <= 80
-              ? "Too much movement — rest your hand on a table."
-              : coverage > 45
-                ? t("scan.good")
-                : t("scan.weak")}
-          </p>
+          {capturing && acceptance < 80 && (
+            <p className="text-xs text-muted-foreground">
+              Rejected frames are being made up for automatically — the timer only counts clean
+              seconds.
+            </p>
+          )}
         </div>
       )}
 
