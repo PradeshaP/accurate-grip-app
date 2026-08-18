@@ -60,6 +60,10 @@ export interface ScanAnalysis {
   beats: number;
   /** how many independent takes were averaged into this result */
   takes: number;
+  /** which anchor produced the reported PWV/BP numbers */
+  calibration?: "cuff" | "baseline" | "reference";
+  /** number of cuff reference points used */
+  calibrationPoints?: number;
 }
 
 /** Median of a numeric array. */
