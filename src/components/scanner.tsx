@@ -80,6 +80,8 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
   const [highAccuracy, setHighAccuracy] = useState(true);
   const [tip, setTip] = useState<CoachState>({ level: "good", code: "ok", message: "" });
   const [acceptance, setAcceptance] = useState(100);
+  const [locks, setLocks] = useState<{ torch: boolean; exposure: boolean } | null>(null);
+  const [diag, setDiag] = useState({ clip: 0, perfusion: 0, artifact: 0, red: 0, green: 0 });
 
   const stopStream = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -174,8 +176,11 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
         });
         streamRef.current = stream;
         const track = stream.getVideoTracks()[0];
+        let torchOk = false;
+        let exposureOk = false;
         try {
           await track?.applyConstraints(torchConstraint(true));
+          torchOk = true;
         } catch {
           /* device has no torch — ambient light still works */
         }
@@ -185,9 +190,11 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
           await track?.applyConstraints({
             advanced: [{ exposureMode: "manual", whiteBalanceMode: "manual", focusMode: "manual" }],
           } as unknown as MediaTrackConstraints);
+          exposureOk = true;
         } catch {
           /* fixed-mode constraints unsupported */
         }
+        setLocks({ torch: torchOk, exposure: exposureOk });
         const video = videoRef.current;
         if (!video) throw new Error("no-video");
         video.srcObject = stream;
@@ -262,12 +269,19 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
           setStability(Math.round(Math.max(0, Math.min(100, 100 - motionMean * 12))));
 
           frameCountRef.current++;
-          if (now - lastFpsAtRef.current > 800) {
+          if (now - lastFpsAtRef.current > 400) {
             const f = Math.round((frameCountRef.current * 1000) / (now - lastFpsAtRef.current));
             fpsRef.current = f;
             setFps(f);
             frameCountRef.current = 0;
             lastFpsAtRef.current = now;
+            setDiag({
+              clip: clipFrac * 100,
+              perfusion: acWinRef.current.length > 25 ? perfusion : 0,
+              artifact: Math.min(100, (motionMean / MOTION_DROP) * 100),
+              red: r,
+              green: g,
+            });
           }
 
           const accept = seenRef.current ? keptRef.current / seenRef.current : 1;
@@ -411,6 +425,43 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
         {capturing && (
           <div className="absolute inset-x-0 bottom-0 p-3">
             <Waveform data={live} height={70} live />
+          </div>
+        )}
+        {(capturing || detecting) && (
+          <div className="absolute left-2 top-2 rounded-lg border border-border/70 bg-background/85 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground backdrop-blur">
+            <div className="mb-1 text-[9px] uppercase tracking-widest text-foreground/70">
+              diagnostics
+            </div>
+            <div className="grid grid-cols-[auto_auto] gap-x-3">
+              <span>fps</span>
+              <span className={fps >= 24 ? "text-risk-normal" : "text-risk-borderline"}>
+                {fps || "—"}
+              </span>
+              <span>torch</span>
+              <span className={locks?.torch ? "text-risk-normal" : "text-risk-borderline"}>
+                {locks ? (locks.torch ? "on" : "n/a") : "—"}
+              </span>
+              <span>exp/wb lock</span>
+              <span className={locks?.exposure ? "text-risk-normal" : "text-risk-borderline"}>
+                {locks ? (locks.exposure ? "locked" : "auto") : "—"}
+              </span>
+              <span>clipping</span>
+              <span className={diag.clip < 5 ? "text-risk-normal" : "text-risk-high"}>
+                {diag.clip.toFixed(1)}%
+              </span>
+              <span>perfusion</span>
+              <span className={diag.perfusion >= 0.35 ? "text-risk-normal" : "text-risk-borderline"}>
+                {diag.perfusion ? `${diag.perfusion.toFixed(2)}%` : "—"}
+              </span>
+              <span>artifact</span>
+              <span className={diag.artifact < 55 ? "text-risk-normal" : "text-risk-high"}>
+                {Math.round(diag.artifact)}
+              </span>
+              <span>R/G</span>
+              <span>
+                {Math.round(diag.red)}/{Math.round(diag.green)}
+              </span>
+            </div>
           </div>
         )}
       </div>
