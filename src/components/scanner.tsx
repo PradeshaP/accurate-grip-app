@@ -427,6 +427,43 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
             <Waveform data={live} height={70} live />
           </div>
         )}
+        {(capturing || detecting) && (
+          <div className="absolute left-2 top-2 rounded-lg border border-border/70 bg-background/85 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground backdrop-blur">
+            <div className="mb-1 text-[9px] uppercase tracking-widest text-foreground/70">
+              diagnostics
+            </div>
+            <div className="grid grid-cols-[auto_auto] gap-x-3">
+              <span>fps</span>
+              <span className={fps >= 24 ? "text-risk-normal" : "text-risk-borderline"}>
+                {fps || "—"}
+              </span>
+              <span>torch</span>
+              <span className={locks?.torch ? "text-risk-normal" : "text-risk-borderline"}>
+                {locks ? (locks.torch ? "on" : "n/a") : "—"}
+              </span>
+              <span>exp/wb lock</span>
+              <span className={locks?.exposure ? "text-risk-normal" : "text-risk-borderline"}>
+                {locks ? (locks.exposure ? "locked" : "auto") : "—"}
+              </span>
+              <span>clipping</span>
+              <span className={diag.clip < 5 ? "text-risk-normal" : "text-risk-high"}>
+                {diag.clip.toFixed(1)}%
+              </span>
+              <span>perfusion</span>
+              <span className={diag.perfusion >= 0.35 ? "text-risk-normal" : "text-risk-borderline"}>
+                {diag.perfusion ? `${diag.perfusion.toFixed(2)}%` : "—"}
+              </span>
+              <span>artifact</span>
+              <span className={diag.artifact < 55 ? "text-risk-normal" : "text-risk-high"}>
+                {Math.round(diag.artifact)}
+              </span>
+              <span>R/G</span>
+              <span>
+                {Math.round(diag.red)}/{Math.round(diag.green)}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {(capturing || detecting) && (
