@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { analyseScan, combineAnalyses, type RawSample, type ScanAnalysis } from "@/lib/ppg";
+import { applyCalibration, learnBaseline } from "@/lib/calibration";
 import { coach, Rolling, MOTION_DROP, type CoachState } from "@/lib/coach";
 import { useI18n } from "@/lib/i18n";
 import { Waveform } from "@/components/waveform";
@@ -133,7 +134,9 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
       }
       stopStream();
       setPhase("idle");
-      onResult(combineAnalyses(takesRef.current));
+      const combined = combineAnalyses(takesRef.current);
+      if (combined.ok) learnBaseline(combined.pttMs);
+      onResult(applyCalibration(combined));
     }, 80);
   }, [fingerDistanceCm, onResult, stopStream]);
 
@@ -143,7 +146,7 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
     window.setTimeout(() => {
       const analysis = analyseScan(syntheticSamples(), { fingerDistanceCm });
       setPhase("idle");
-      onResult(analysis);
+      onResult(applyCalibration(analysis));
     }, 900);
   }, [fingerDistanceCm, onResult]);
 
