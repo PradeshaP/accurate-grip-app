@@ -80,6 +80,8 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
   const [highAccuracy, setHighAccuracy] = useState(true);
   const [tip, setTip] = useState<CoachState>({ level: "good", code: "ok", message: "" });
   const [acceptance, setAcceptance] = useState(100);
+  const [locks, setLocks] = useState<{ torch: boolean; exposure: boolean } | null>(null);
+  const [diag, setDiag] = useState({ clip: 0, perfusion: 0, artifact: 0, red: 0, green: 0 });
 
   const stopStream = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -174,8 +176,11 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
         });
         streamRef.current = stream;
         const track = stream.getVideoTracks()[0];
+        let torchOk = false;
+        let exposureOk = false;
         try {
           await track?.applyConstraints(torchConstraint(true));
+          torchOk = true;
         } catch {
           /* device has no torch — ambient light still works */
         }
@@ -185,9 +190,11 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
           await track?.applyConstraints({
             advanced: [{ exposureMode: "manual", whiteBalanceMode: "manual", focusMode: "manual" }],
           } as unknown as MediaTrackConstraints);
+          exposureOk = true;
         } catch {
           /* fixed-mode constraints unsupported */
         }
+        setLocks({ torch: torchOk, exposure: exposureOk });
         const video = videoRef.current;
         if (!video) throw new Error("no-video");
         video.srcObject = stream;
