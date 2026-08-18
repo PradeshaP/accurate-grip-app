@@ -269,12 +269,19 @@ export function Scanner({ fingerDistanceCm, onResult }: Props) {
           setStability(Math.round(Math.max(0, Math.min(100, 100 - motionMean * 12))));
 
           frameCountRef.current++;
-          if (now - lastFpsAtRef.current > 800) {
+          if (now - lastFpsAtRef.current > 400) {
             const f = Math.round((frameCountRef.current * 1000) / (now - lastFpsAtRef.current));
             fpsRef.current = f;
             setFps(f);
             frameCountRef.current = 0;
             lastFpsAtRef.current = now;
+            setDiag({
+              clip: clipFrac * 100,
+              perfusion: acWinRef.current.length > 25 ? perfusion : 0,
+              artifact: Math.min(100, (motionMean / MOTION_DROP) * 100),
+              red: r,
+              green: g,
+            });
           }
 
           const accept = seenRef.current ? keptRef.current / seenRef.current : 1;
