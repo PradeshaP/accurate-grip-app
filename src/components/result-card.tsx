@@ -1,8 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import type { ScanAnalysis } from "@/lib/ppg";
 import { Waveform } from "@/components/waveform";
+import { CalibrationPanel } from "@/components/calibration-panel";
+import { applyCalibration } from "@/lib/calibration";
+import { downloadCsv, stamp, toCsv } from "@/lib/csv";
 
 const RISK_STYLES = {
   normal: {
@@ -44,7 +47,7 @@ function Metric({ label, value, unit }: { label: string; value: string; unit?: s
 }
 
 export function ResultCard({
-  analysis,
+  analysis: rawAnalysis,
   meta,
   onNewScan,
 }: {
@@ -53,6 +56,8 @@ export function ResultCard({
   onNewScan: () => void;
 }) {
   const { t, voice, lang } = useI18n();
+  const [analysis, setAnalysis] = useState<ScanAnalysis>(rawAnalysis);
+  useEffect(() => setAnalysis(rawAnalysis), [rawAnalysis]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -78,6 +83,40 @@ export function ResultCard({
     utter.lang = voice;
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utter);
+  };
+
+  const exportCsv = () => {
+    const row = {
+      measured_at: new Date().toISOString(),
+      risk_level: analysis.risk,
+      pwv_ms: analysis.pwv,
+      pwv_low: analysis.pwvLow,
+      pwv_high: analysis.pwvHigh,
+      est_systolic: analysis.systolic,
+      est_diastolic: analysis.diastolic,
+      calibration: analysis.calibration ?? "reference",
+      calibration_points: analysis.calibrationPoints ?? 0,
+      heart_rate_bpm: analysis.heartRate,
+      ptt_ms: analysis.pttMs,
+      ptt_spread_ms: analysis.pttSpreadMs,
+      hrv_sdnn_ms: analysis.hrvMs,
+      rmssd_ms: analysis.rmssdMs,
+      signal_quality: analysis.quality,
+      confidence: analysis.confidence,
+      snr_db: analysis.snrDb,
+      perfusion_index: analysis.perfusionIndex,
+      beats: analysis.beats,
+      takes: analysis.takes,
+      camera_fps: analysis.fsActual,
+      age_band: meta.ageBand,
+      gender: meta.gender,
+      district: meta.district,
+      state: meta.state,
+      screener_role: meta.role,
+      finger_distance_cm: meta.fingerDistanceCm,
+      language: lang,
+    };
+    downloadCsv(`nadiscan-result-${stamp()}.csv`, toCsv([row]));
   };
 
   const save = async () => {
@@ -197,6 +236,8 @@ export function ResultCard({
         )}
       </div>
 
+      <CalibrationPanel analysis={analysis} onChange={(state) => setAnalysis(applyCalibration(rawAnalysis, state))} />
+
       <div className="mt-6 flex flex-wrap gap-3">
         <button
           onClick={save}
@@ -204,6 +245,12 @@ export function ResultCard({
           className="rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-accent-foreground transition hover:opacity-90 disabled:opacity-60"
         >
           {saved ? `✓ ${t("result.saved")}` : t("result.save")}
+        </button>
+        <button
+          onClick={exportCsv}
+          className="rounded-xl border border-border px-5 py-3 text-sm font-medium hover:bg-secondary"
+        >
+          ⬇ Export CSV
         </button>
         <button
           onClick={onNewScan}
